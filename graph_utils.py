@@ -1,0 +1,205 @@
+import sys
+import os
+import argparse
+import itertools
+import numpy as np
+
+from threading import RLock
+from concurrent.futures import ThreadPoolExecutor
+
+class Graph:
+
+    def __init__(self):
+        self.nodes = {}
+        self.nodes_lock = RLock()
+
+    def add_node(self, node):
+        self.nodes_lock.acquire()
+        if node not in self.nodes:
+            self.nodes[node.node_id] = node
+            self.nodes_lock.release()
+        else:
+            self.nodes_lock.release()
+            raise Exception("Attempted to add redundant node with id: {}".format(node_id))
+
+    def get_node(self, node_id):
+        self.nodes_lock.acquire()
+        if node_id in self.nodes:
+            node = self.nodes[node_id]
+        else:
+            node = None
+
+        self.nodes_lock.release()
+
+        return node
+
+    def get_nodes(self, node_ids):
+        self.nodes_lock.acquire()
+        nodes_mapping = {}
+        for node_id in node_ids:
+            if node_id in self.nodes:
+                node = self.nodes[node_id]
+            else:
+                node = None
+
+            nodes_mapping[node_id] = node
+
+        self.nodes_lock.release()
+
+        return nodes_mapping
+
+    def get_node_ids(self):
+        self.nodes_lock.acquire()
+        keys = self.nodes.keys()
+        self.nodes_lock.release()
+        return keys
+
+    def __len__(self):
+        return len(self.nodes)
+
+class Node:
+
+    def  __init__(self, node_id):
+        self.node_id = node_id
+        # A list of nodes to which the current
+        # node is connected via an undirected edge
+        self.connections = set()
+        self.connection_ids = set()
+        self.node_id = node_id
+
+    def add_connection(self, other_node):
+        self.connections.add(other_node)
+        self.connection_ids.add(other_node.get_id())
+
+    def connected_to_id(self, node_id):
+        return node_id in self.connections
+
+    def connected_to_node(self, node):
+        return self.connected_to_node(node.get_id())
+
+    def get_connection_ids(self):
+        return self.connection_ids
+
+    def get_connection(self):
+        return self.connections
+
+    def get_id(self):
+        return self.node_id
+
+def construct_network_graph(graph_file_path):
+    with open(graph_file_path, "r") as f:
+        connection_lines = [line.rstrip().split(" ") for line in f.readlines()]
+
+    connections = [(int(source), int(dest)) for source, dest in connection_lines]
+    sources, dests = zip(*connections)
+    unique_nodes = set(sources + dests)
+
+    network_graph = Graph()
+
+    for node_node_id in unique_nodes:
+       new_node = Node(node_node_id)
+       network_graph.add_node(new_node)
+
+    for source_id, dest_id in connections:
+        source_dest_nodes = network_graph.get_nodes([source_id, dest_id])
+        source_node = source_dest_nodes[source_id]
+        dest_node = source_dest_nodes[dest_id]
+        source_node.add_connection(dest_node)
+        dest_node.add_connection(source_node)
+
+    return network_graph
+
+def method_common_neighbors(node_1, node_2):
+    return len(node_1.get_connection_ids().intersection(node_2.get_connection_ids()))
+
+def method_common_neighbors_exclude_selves(node_1, node_2):
+    node_1_conn_ids = set(node_1.get_connection_ids())
+    node_2_conn_ids = set(node_2.get_connection_ids())
+    if node_1.get_id() in node_2_conn_ids:
+        # The nodes are connected, so we should
+        # remove the entry in a given node's
+        # connections list that corresponds to the other node
+        node_1_conn_ids.discard(node_2.get_id())
+        node_2_conn_ids.discard(node_1.get_id())
+
+    return len(node_1_conn_ids.intersection(node_2_conn_ids))
+
+def method_jaccard_coeff(node_1, node_2):
+    len_intersection = len(node_1.get_connection_ids().intersection(node_2.get_connection_ids()))
+    len_union = len(node_1.get_connection_ids().union(node_2.get_connection_ids()))
+
+    return float(len_intersection) / len_union
+
+def method_pref_attachment(node_1, node_2):
+    return len(node_1.get_connection_ids()) * len(node_2.get_connection_ids())
+
+def create_scorer(method_fn, correctness_threshold):
+    return lambda node_1, node_2 : method_fn(node_1, node_2) >= correctness_threshold
+
+def eval_link_prediction_method(graph, scorer_fn):
+    node_ids = list(graph.get_node_ids())
+
+    # Concurrent read/write operations are 
+    # not executed on the same dictionary entry,
+    # and, due to the enforced determinism and symmetry
+    # of `scorer_fn`, the results dictionary can
+    # therefore always be modified in lock-free fashion
+    results = {}
+
+    def eval_helper(idx_low, idx_high):
+        correct = 0
+        explored = 0
+        for i in xrange(idx_low, idx_high):
+            i_node_id = node_ids[i]
+            i_node = graph.get_node(i_node_id)
+
+            for j_node_id in node_ids:
+                results_key = frozenset((i_node_id, j_node_id))
+                if results_key in results or i_node_id == j_node_id:
+                    continue
+
+                j_node = graph.get_node(j_node_id)
+                explored += 1
+
+                prediction = scorer_fn(i_node, j_node)
+                label = i_node.connected_to_id(j_node_id)
+
+                results[results_key] = (prediction, label)
+                if prediction == label:
+                    correct += 1
+
+        return correct, explored 
+
+    num_workers = 10
+    interval_length = len(node_ids) / num_workers
+    idxs = np.cumsum([0] + [interval_length for _ in range(num_workers - 1)])
+    idxs = np.append(idxs, len(node_ids))
+
+    evaluation_executor = ThreadPoolExecutor(max_workers=num_workers)
+    result_futures = []
+    for i in range(len(idxs) - 1):
+        idx_low = idxs[i]
+        idx_high = idxs[i + 1]
+        result_future = evaluation_executor.submit(eval_helper, idx_low, idx_high)
+        result_futures.append(result_future)
+
+    total_correct = 0
+    total_explored = 0
+    for result_future in result_futures:
+       correct, explored = result_future.result()
+       total_correct += correct
+       total_explored += explored
+
+    print("Total Correct: {}, Total Explored: {}, Ratio: {}".format(total_correct, total_explored, float(total_correct) / total_explored))
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Construct a facebook graph given node and edge inputs')
+    parser.add_argument('-p', '--path', type=str, help='Path to the facebook combined graph file')
+
+    args = parser.parse_args()
+
+    graph = construct_network_graph(args.path)
+    # common_neighbors_scorer = create_scorer(method_common_neighbors, 1)
+    common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 1)
+    eval_link_prediction_method(graph, common_neighbors_scorer)
+
