@@ -4,6 +4,7 @@ import argparse
 import itertools
 import numpy as np
 
+from datetime import datetime
 from threading import RLock
 from concurrent.futures import ThreadPoolExecutor
 
@@ -198,8 +199,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    before = datetime.now()
+
     graph = construct_network_graph(args.path)
     # common_neighbors_scorer = create_scorer(method_common_neighbors, 1)
     common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 1)
     eval_link_prediction_method(graph, common_neighbors_scorer)
 
+    end = datetime.now()
+    print((end - before).total_seconds())
