@@ -68,13 +68,14 @@ class Graph:
 
 class Node:
 
-    def  __init__(self, node_id):
+    def  __init__(self, node_id, features=None):
         self.node_id = node_id
         # A list of nodes to which the current
         # node is connected via an undirected edge
         self.connections = set()
         self.connection_ids = set()
         self.node_id = node_id
+        self.features = features
 
     def add_connection(self, other_node):
         self.connections.add(other_node)
