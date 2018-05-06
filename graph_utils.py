@@ -10,6 +10,12 @@ from threading import RLock
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 
+RESULTS_KEY_SENSITIVITY = "sensitivity"
+RESULTS_KEY_SPECIFICITY = "specificity"
+RESULTS_KEY_PRECISION = "precision"
+RESULTS_KEY_FALSE_POSITIVE_RATE = "false_positive_rate"
+RESULTS_KEY_TOTAL_EXPLORED = "total_explored"
+
 class Graph:
 
     def __init__(self):
@@ -248,9 +254,20 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
     sensitivity = float(total_true_positive) / max(1, (total_true_positive + total_false_negative))
     specificity = float(total_true_negative) / max(1, (total_true_negative + total_false_positive))
     precision = float(total_true_positive) / max(1, (total_true_positive + total_false_positive))
+    false_positive_rate = float(total_false_positive) / max(1, (total_false_positive + total_true_negative))
+
+    stats_results = {
+                       RESULTS_KEY_SENSITIVITY : sensitivity,
+                       RESULTS_KEY_SPECIFICITY : specificity,
+                       RESULTS_KEY_PRECISION : precision,
+                       RESULTS_KEY_FALSE_POSITIVE_RATE : false_positive_rate,
+                       RESULTS_KEY_TOTAL_EXPLORED : total_explored
+                    }
 
     print("Total explored: {}".format(total_explored))
-    print("Sensitivity: {}, Specificity: {}, Precision: {}".format(sensitivity, specificity, precision))
+    print("Sensitivity (TPR): {}, Specificity: {}, Precision: {}, FPR: {}".format(sensitivity, specificity, precision, false_positive_rate))
+
+    return stats_results 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Construct a facebook graph given node and edge inputs')

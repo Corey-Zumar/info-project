@@ -1,0 +1,10 @@
+{
+    "method_name": "pref_attachment", 
+    "threshold": 5.0, 
+    "graph_path": "facebook_combined.txt", 
+    "specificity": 0.003628584218671105, 
+    "total_explored": 8154741, 
+    "sensitivity": 0.999909332003536, 
+    "precision": 0.010857965878375177, 
+    "false_positive_rate": 0.9963714157813289
+}

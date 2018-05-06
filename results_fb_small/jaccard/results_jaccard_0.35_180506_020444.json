@@ -1,0 +1,10 @@
+{
+    "method_name": "jaccard", 
+    "threshold": 0.35, 
+    "graph_path": "facebook_combined.txt", 
+    "specificity": 0.9983432729928828, 
+    "total_explored": 8154741, 
+    "sensitivity": 0.5118888410363353, 
+    "precision": 0.7716726465060653, 
+    "false_positive_rate": 0.001656727007117207
+}
