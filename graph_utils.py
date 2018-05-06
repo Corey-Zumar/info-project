@@ -1,9 +1,7 @@
 import sys
 import os
 import argparse
-import itertools
 import numpy as np
-import math
 
 from datetime import datetime
 from threading import RLock
@@ -11,6 +9,7 @@ from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 
 from featurizer import create_feature_vectors
+from parallelism import get_worker_range_pairs
 
 RESULTS_KEY_SENSITIVITY = "sensitivity"
 RESULTS_KEY_SPECIFICITY = "specificity"
@@ -118,7 +117,7 @@ def construct_network_graph(graph_file_path, features_dir_path=None):
     network_graph = Graph()
 
     for node_id in unique_nodes:
-        if node_features:
+        if node_features and node_id in node_features:
             features = node_features[node_id]
         else:
             features = None
@@ -164,7 +163,7 @@ def method_always_zero(node_1, node_2):
 def create_scorer(method_fn, correctness_threshold):
     return lambda node_1, node_2 : method_fn(node_1, node_2) >= correctness_threshold
 
-def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
+def eval_link_prediction_method(graph, scorer_fn):
     node_ids = list(graph.get_node_ids())
 
     results_queue = MPQueue()
@@ -207,26 +206,7 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
         except Exception as e:
             print(e)
 
-    num_intervals = max(1, int(4 * math.sqrt(num_workers)))
-    interval_length = int(len(node_ids) / num_intervals)
-    idxs = np.cumsum([0] + [interval_length for _ in range(num_intervals - 1)])
-    idxs = np.append(idxs, len(node_ids))
-    ranges = []
-    for i in range(len(idxs) - 1):
-        r_low = idxs[i]
-        r_high = idxs[i + 1]
-        ranges.append((r_low, r_high))
-
-    range_pairs = [(r1, r2) for r1, r2 in itertools.product(ranges, ranges)]
-    unique_set = set()
-    new_pairs = []
-    for pair in range_pairs:
-        unique_key = frozenset(pair)
-        if unique_key not in unique_set:
-            new_pairs.append(pair)
-            unique_set.add(unique_key)
-
-    range_pairs = new_pairs
+    range_pairs = get_worker_range_pairs(node_ids, num_workers)
 
     range_idx = 0
     result_procs = []
