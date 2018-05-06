@@ -10,6 +10,8 @@ from threading import RLock
 from multiprocessing import Process
 from multiprocessing import Queue as MPQueue
 
+from featurizer import create_feature_vectors
+
 RESULTS_KEY_SENSITIVITY = "sensitivity"
 RESULTS_KEY_SPECIFICITY = "specificity"
 RESULTS_KEY_PRECISION = "precision"
@@ -97,7 +99,15 @@ class Node:
     def get_id(self):
         return self.node_id
 
-def construct_network_graph(graph_file_path):
+    def get_features(self):
+        return self.features
+
+def construct_network_graph(graph_file_path, features_dir_path=None):
+    if features_dir_path:
+        node_features = create_feature_vectors(features_dir_path)        
+    else:
+        node_features = None
+
     with open(graph_file_path, "r") as f:
         connection_lines = [line.rstrip().split(" ") for line in f.readlines()]
 
@@ -107,9 +117,13 @@ def construct_network_graph(graph_file_path):
 
     network_graph = Graph()
 
-    for node_node_id in unique_nodes:
-       new_node = Node(node_node_id)
-       network_graph.add_node(new_node)
+    for node_id in unique_nodes:
+        if node_features:
+            features = node_features[node_id]
+        else:
+            features = None
+        new_node = Node(node_id, features)
+        network_graph.add_node(new_node)
 
     for source_id, dest_id in connections:
         source_dest_nodes = network_graph.get_nodes([source_id, dest_id])
@@ -273,12 +287,13 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Construct a facebook graph given node and edge inputs')
     parser.add_argument('-p', '--path', type=str, help='Path to the facebook combined graph file')
+    parser.add_argument('-f', '--features_path', type=str, help='Path to a directory containing feature vectors for each node')
 
     args = parser.parse_args()
 
     before = datetime.now()
 
-    graph = construct_network_graph(args.path)
+    graph = construct_network_graph(args.path, args.features_path)
 
     common_neighbors_scorer = create_scorer(method_common_neighbors, 2)
     # common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 1)
