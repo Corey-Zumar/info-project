@@ -101,9 +101,9 @@ class Node:
     def get_features(self):
         return self.features
 
-def construct_network_graph(graph_file_path, features_dir_path=None):
+def construct_network_graph(graph_file_path, features_dir_path=None, ego_node_id=None):
     if features_dir_path:
-        node_features = create_feature_vectors(features_dir_path)        
+        node_features = create_feature_vectors(features_dir_path, ego_node_id)        
     else:
         node_features = None
 
@@ -263,24 +263,3 @@ def eval_link_prediction_method(graph, scorer_fn):
     print("Sensitivity (TPR): {}, Specificity: {}, Precision: {}, FPR: {}".format(sensitivity, specificity, precision, false_positive_rate))
 
     return stats_results 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Construct a facebook graph given node and edge inputs')
-    parser.add_argument('-p', '--path', type=str, help='Path to the facebook combined graph file')
-    parser.add_argument('-f', '--features_path', type=str, help='Path to a directory containing feature vectors for each node')
-
-    args = parser.parse_args()
-
-    before = datetime.now()
-
-    graph = construct_network_graph(args.path, args.features_path)
-
-    common_neighbors_scorer = create_scorer(method_common_neighbors, 2)
-    # common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 1)
-    eval_link_prediction_method(graph, common_neighbors_scorer, 64)
-    
-    # vacuous_scorer = create_scorer(method_always_zero, 1)
-    # eval_link_prediction_method(graph, vacuous_scorer, 64)
-
-    end = datetime.now()
-    print((end - before).total_seconds())

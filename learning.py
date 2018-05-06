@@ -15,6 +15,9 @@ from parallelism import get_worker_range_pairs
 
 NUM_DATASET_WORKERS = 64
 
+INPUT_VECTOR_SIZE = 1154
+NUM_CLASSES = 2
+
 TRAINING_LABEL_POSITIVE = 1
 TRAINING_LABEL_NEGATIVE = 0
 
@@ -81,11 +84,11 @@ def construct_training_dataset(graph, output_dir, num_workers):
 
         print("Wrote positive training data to file with path: {}".format(pos_data_path))
 
-        # neg_data_path = os.path.join(output_dir, neg_data_subpath)
-        # with open(neg_data_path, "w") as f:
-        #     pickle.dump(training_data[TRAINING_LABEL_NEGATIVE], f)
-        #
-        # print("Wrote negative training data to file with path: {}".format(neg_data_path))
+        neg_data_path = os.path.join(output_dir, neg_data_subpath)
+        with open(neg_data_path, "w") as f:
+            pickle.dump(training_data[TRAINING_LABEL_NEGATIVE], f)
+
+        print("Wrote negative training data to file with path: {}".format(neg_data_path))
 
     range_pairs = get_worker_range_pairs(node_ids, num_workers)
     result_procs = []
@@ -111,29 +114,52 @@ def construct_training_dataset(graph, output_dir, num_workers):
     for proc in result_procs:
         proc.join()
 
-def load_positive_training_data(data_dir_path):
-    all_positives = [] 
+def load_training_data(data_dir_path, max_pos_size, max_neg_size):
+    training_data = { TRAINING_LABEL_POSITIVE : [], TRAINING_LABEL_NEGATIVE : []}
     data_fpaths = [os.path.join(data_dir_path, fpath) for fpath in os.listdir(data_dir_path) if fpath.endswith(".pkl")]
     for fpath in data_fpaths:
-        if "pos" in fpath:
+        try:
+            if "pos" in fpath and len(training_data[TRAINING_LABEL_POSITIVE]) >= max_pos_size:
+                continue
+            if "neg" in fpath and len(training_data[TRAINING_LABEL_NEGATIVE]) >= max_neg_size:
+                continue
+
             with open(fpath, "r") as f:
-                training_data = pickle.load(f)
-                all_positives += training_data 
+                feature_vecs = pickle.load(f)
+                if "pos" in fpath: 
+                    training_data[TRAINING_LABEL_POSITIVE] += feature_vecs 
+                elif "neg" in fpath:
+                    training_data[TRAINING_LABEL_NEGATIVE] += feature_vecs 
+                else:
+                    raise
 
-    print(len(all_positives))
+        except Exception as e:
+            print(fpath)
+            os._exit(0)
 
+    np.random.shuffle(training_data[TRAINING_LABEL_POSITIVE])
+    np.random.shuffle(training_data[TRAINING_LABEL_NEGATIVE])
+
+    training_data[TRAINING_LABEL_POSITIVE] = training_data[TRAINING_LABEL_POSITIVE][:max_pos_size]
+    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:max_neg_size]
+
+    return training_data
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Create a training dataset that can be used to train a link predictor')
     parser.add_argument('-p', '--path', type=str, help='Path to the facebook combined graph file')
     parser.add_argument('-f', '--features_path', type=str, help='Path to a directory containing feature vectors for each node')
     parser.add_argument('-o', '--output_path', type=str, help="The output directory path to which to save the pickled training data")
+    parser.add_argument('-e', '--ego_node_id', type=int, help='The id of the ego node from which to derive features for the graph')
     parser.add_argument('-l', '--load', action='store_true', help="If specified, load the training data specified by the 'output_path' flag")
+    parser.add_argument('-pm', '--pos_max', type=int, help="The maximum number of positive elements in the loaded training dataset")
+    parser.add_argument('-nm', '--neg_max', type=int, help="The maximum number of negative elements in the loaded training dataset")
 
     args = parser.parse_args()
 
     if args.load:
-        load_positive_training_data(args.output_path)
+        load_training_data(args.output_path, args.pos_max, args.neg_max)
     else:
-        graph = construct_network_graph(args.path, args.features_path)
+        graph = construct_network_graph(args.path, args.features_path, args.ego_node_id)
         construct_training_dataset(graph, args.output_path, NUM_DATASET_WORKERS)
 
