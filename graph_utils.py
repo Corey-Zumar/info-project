@@ -137,6 +137,9 @@ def method_jaccard_coeff(node_1, node_2):
 def method_pref_attachment(node_1, node_2):
     return len(node_1.get_connection_ids()) * len(node_2.get_connection_ids())
 
+def method_always_zero(node_1, node_2):
+    return 0
+
 def create_scorer(method_fn, correctness_threshold):
     return lambda node_1, node_2 : method_fn(node_1, node_2) >= correctness_threshold
 
@@ -149,10 +152,10 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
         try:
             print(r1_low, r1_high, r2_low, r2_high)
             results = set()
-            correct_negative = 0
-            correct_positive = 0
-            total_negative = 0
-            total_positive = 0
+            false_negative = 0
+            true_negative = 0
+            false_positive = 0
+            true_positive = 0
             for i in xrange(r1_low, r1_high):
                 i_node_id = node_ids[i]
                 i_node = graph.get_node(i_node_id)
@@ -168,21 +171,22 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
                     prediction = scorer_fn(i_node, j_node)
                     label = i_node.connected_to_id(j_node_id)
 
-                    if label == True:
-                        total_positive += 1
-                        if prediction == label:
-                            correct_positive += 1
+                    if label == True and prediction == label:
+                        true_positive += 1
+                    elif label == True and prediction != label:
+                        false_negative += 1
+                    elif label == False and prediction == label:
+                        true_negative += 1
+                    elif label == False and prediction != label:
+                        false_positive += 1
 
-                    else:
-                        total_negative += 1
-                        if prediction == label:
-                            correct_negative += 1
-
-            results_queue.put((correct_negative, correct_positive, total_negative, total_positive))
+                    results.add(results_key)
+    
+            results_queue.put((false_positive, false_negative, true_positive, true_negative))
         except Exception as e:
             print(e)
 
-    num_intervals = max(1, int(math.sqrt(num_workers)))
+    num_intervals = max(1, int(4 * math.sqrt(num_workers)))
     interval_length = int(len(node_ids) / num_intervals)
     idxs = np.cumsum([0] + [interval_length for _ in range(num_intervals - 1)])
     idxs = np.append(idxs, len(node_ids))
@@ -216,27 +220,37 @@ def eval_link_prediction_method(graph, scorer_fn, num_workers=20):
         result_proc.start()
         result_procs.append(result_proc)
 
+        if len(result_procs) >= num_workers:
+            for proc in result_procs:
+                proc.join()
+            result_procs = []
+
         range_idx += 1
 
     for proc in result_procs:
         proc.join()
 
-    total_correct_negative = 0
-    total_correct_positive = 0
-    total_negative = 0
-    total_positive = 0
-    while not results_queue.empty():
-        correct_negative, correct_positive, explored_negative, explored_positive = results_queue.get()
-        total_correct_negative += correct_negative
-        total_correct_positive += correct_positive
-        total_negative += explored_negative
-        total_positive += explored_positive
+    total_false_positive = 0
+    total_false_negative = 0
+    total_true_positive = 0
+    total_true_negative = 0
 
-    # total_false_positive = (
-    # true_positive_ratio = float(total_correct_positive) / total_positive
-    # false_positive_ratio = 
-    #
-    # print("Total Correct: {}, Total Explored: {}, Ratio: {}".format(total_correct, total_explored, float(total_correct) / total_explored))
+    total_explored = 0
+    while not results_queue.empty():
+        false_positive, false_negative, true_positive, true_negative = results_queue.get()
+        total_false_positive += false_positive
+        total_false_negative += false_negative
+        total_true_positive += true_positive
+        total_true_negative += true_negative
+        
+        total_explored += (false_positive + false_negative + true_positive + true_negative)
+
+    sensitivity = float(total_true_positive) / max(1, (total_true_positive + total_false_negative))
+    specificity = float(total_true_negative) / max(1, (total_true_negative + total_false_positive))
+    precision = float(total_true_positive) / max(1, (total_true_positive + total_false_positive))
+
+    print("Total explored: {}".format(total_explored))
+    print("Sensitivity: {}, Specificity: {}, Precision: {}".format(sensitivity, specificity, precision))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Construct a facebook graph given node and edge inputs')
@@ -247,9 +261,13 @@ if __name__ == "__main__":
     before = datetime.now()
 
     graph = construct_network_graph(args.path)
-    # common_neighbors_scorer = create_scorer(method_common_neighbors, 1)
-    common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 10)
+
+    common_neighbors_scorer = create_scorer(method_common_neighbors, 2)
+    # common_neighbors_scorer = create_scorer(method_common_neighbors_exclude_selves, 1)
     eval_link_prediction_method(graph, common_neighbors_scorer, 64)
+    
+    # vacuous_scorer = create_scorer(method_always_zero, 1)
+    # eval_link_prediction_method(graph, vacuous_scorer, 64)
 
     end = datetime.now()
     print((end - before).total_seconds())
