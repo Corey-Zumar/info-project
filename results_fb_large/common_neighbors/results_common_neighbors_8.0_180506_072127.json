@@ -1,0 +1,10 @@
+{
+    "method_name": "common_neighbors", 
+    "threshold": 8.0, 
+    "graph_path": "facebook_large_combined.txt", 
+    "specificity": 0.9994875592525624, 
+    "total_explored": 2030788315, 
+    "sensitivity": 0.49611950528435134, 
+    "precision": 0.28040304734339755, 
+    "false_positive_rate": 0.0005124407474375697
+}
