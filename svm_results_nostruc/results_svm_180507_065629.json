@@ -1,0 +1,9 @@
+{
+    "sensitivity": 0.6737542723511423, 
+    "false_positive_rate": 0.44656860855149016, 
+    "precision": 0.07479431264477994, 
+    "method_name": "svm", 
+    "graph_path": "facebook_combined.txt", 
+    "specificity": 0.5534313914485098, 
+    "total_explored": 546535
+}

@@ -1,0 +1,9 @@
+{
+    "sensitivity": 0.9123943155243749, 
+    "false_positive_rate": 0.7661198288159772, 
+    "precision": 0.059984341626909694, 
+    "method_name": "neural_net", 
+    "graph_path": "facebook_combined.txt", 
+    "specificity": 0.23388017118402282, 
+    "total_explored": 546535
+}

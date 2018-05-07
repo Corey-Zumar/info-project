@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/ubuntu/info-project/nn_weights_nostruc/nn_weights.ckpt"
+all_model_checkpoint_paths: "/home/ubuntu/info-project/nn_weights_nostruc/nn_weights.ckpt"
