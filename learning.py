@@ -21,6 +21,18 @@ NUM_CLASSES = 2
 TRAINING_LABEL_POSITIVE = 1
 TRAINING_LABEL_NEGATIVE = 0
 
+def create_feature_vector(node_1, node_2):
+    node_1_features = node_1.get_features()
+    node_2_features = node_2.get_features()
+    assert node_1_features is not None and node_2_features is not None
+
+    feature_vec = np.append(node_1_features, node_2_features)
+    common_neighbors = method_common_neighbors(node_1, node_2)
+    jaccard_coeff = method_jaccard_coeff(node_1, node_2)
+    feature_vec = np.append(feature_vec, [common_neighbors, jaccard_coeff])
+
+    return feature_vec
+
 def construct_training_dataset(graph, output_dir, num_workers):
     node_ids = list(graph.get_node_ids())
 
@@ -63,10 +75,7 @@ def construct_training_dataset(graph, output_dir, num_workers):
 
                 # Concatenate the features of each node to get a feature
                 # vector that will be used for developing a classifier
-                feature_vec = np.append(i_node_features, j_node_features)
-                common_neighbors = method_common_neighbors(i_node, j_node)
-                jaccard_coeff = method_jaccard_coeff(i_node, j_node)
-                feature_vec = np.append(feature_vec, [common_neighbors, jaccard_coeff])
+                feature_vec = create_feature_vector(i_node, j_node)
 
                 label = get_label(i_node, j_node)
                 training_data[label].append(feature_vec)
@@ -126,6 +135,7 @@ def load_training_data(data_dir_path, max_pos_size, max_neg_size):
 
             with open(fpath, "r") as f:
                 feature_vecs = pickle.load(f)
+
                 if "pos" in fpath: 
                     training_data[TRAINING_LABEL_POSITIVE] += feature_vecs 
                 elif "neg" in fpath:

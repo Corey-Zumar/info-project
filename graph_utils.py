@@ -163,12 +163,12 @@ def method_always_zero(node_1, node_2):
 def create_scorer(method_fn, correctness_threshold):
     return lambda node_1, node_2 : method_fn(node_1, node_2) >= correctness_threshold
 
-def eval_link_prediction_method(graph, scorer_fn):
+def eval_link_prediction_method(graph, scorer_fn, num_workers, features_required=False):
     node_ids = list(graph.get_node_ids())
 
     results_queue = MPQueue()
 
-    def eval_helper(graph, node_ids, r1_low, r1_high, r2_low, r2_high, results_queue):
+    def eval_helper(graph, node_ids, r1_low, r1_high, r2_low, r2_high, results_queue, features_required):
         try:
             print(r1_low, r1_high, r2_low, r2_high)
             results = set()
@@ -182,11 +182,11 @@ def eval_link_prediction_method(graph, scorer_fn):
 
                 for j in xrange(r2_low, r2_high):
                     j_node_id = node_ids[j]
-                    results_key = frozenset((i_node_id, j_node_id))
-                    if results_key in results or i_node_id == j_node_id:
-                        continue
-
                     j_node = graph.get_node(j_node_id)
+
+                    results_key = frozenset((i_node_id, j_node_id))
+                    if results_key in results or i_node_id == j_node_id or (features_required and (i_node.get_features() is None or j_node.get_features() is None)):
+                        continue
 
                     prediction = scorer_fn(i_node, j_node)
                     label = i_node.connected_to_id(j_node_id)
@@ -217,7 +217,7 @@ def eval_link_prediction_method(graph, scorer_fn):
         r1_low, r1_high = r1
         r2_low, r2_high = r2
 
-        result_proc = Process(target=eval_helper, args=(graph, node_ids, r1_low, r1_high, r2_low, r2_high, results_queue))
+        result_proc = Process(target=eval_helper, args=(graph, node_ids, r1_low, r1_high, r2_low, r2_high, results_queue, features_required))
         result_proc.start()
         result_procs.append(result_proc)
 

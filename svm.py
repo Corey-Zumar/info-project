@@ -13,13 +13,15 @@ POS_LABEL = 1
 
 class LinkSVM:
 
-    def __init__(self, gpu_num, gpu_mem_frac=.95):
+    eval_svm = None
+
+    def __init__(self, gpu_num, weights_path=None, gpu_mem_frac=.95):
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_mem_frac)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True, device_count={'GPU': 0, 'CPU': 2}))
 
-        self._create_architecture(gpu_num)
+        self._create_architecture(gpu_num, weights_path)
 
-    def _create_architecture(self, gpu_num):
+    def _create_architecture(self, gpu_num, weights_path=None):
         with tf.device("/gpu:{}".format(gpu_num)):
             self.t_inputs = tf.placeholder(tf.float32, shape=[None, INPUT_VECTOR_SIZE])
             self.t_labels = tf.placeholder(tf.float32, shape=[None, 1])
@@ -32,6 +34,10 @@ class LinkSVM:
             self.t_alpha = 0.01
 
             self.loss = tf.reduce_mean(tf.maximum(0.0, 1.0 - tf.multiply(self.t_outputs, self.t_labels))) + (self.t_alpha * tf.reduce_sum(tf.square(self.t_weights)))
+
+            if weights_path:
+                saver = tf.train.Saver()
+                saver.restore(self.sess, weights_path)
 
     def train(self, training_data, batch_size, num_epochs, learning_rate=.001):
         pos_vecs = training_data[TRAINING_LABEL_POSITIVE] 
@@ -92,24 +98,23 @@ class LinkSVM:
         bias = sess.run(self.t_bias, feed_dict={})
         return bias
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train LinkSVM')
-    parser.add_argument('-t', '--training_path', type=str, help="The path to a directory containing model training data")
+    def save(self, output_path):
+        saver = tf.train.Saver()
+        saver.save(self.sess, output_path)
 
-    args = parser.parse_args()
-
+def test_training(training_path):
     pos_max = 5000
     neg_max = 6000
 
     training_data = load_training_data(args.training_path, pos_max, neg_max)
     validation_data = dict(training_data)
     training_data[TRAINING_LABEL_POSITIVE] = training_data[TRAINING_LABEL_POSITIVE][:1200]
-    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:1500]
+    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:2400]
     validation_data[TRAINING_LABEL_POSITIVE] = validation_data[TRAINING_LABEL_POSITIVE][1200:] 
-    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][1500:] 
+    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][2400:] 
 
     svm = LinkSVM(gpu_num=0)
-    svm.train(training_data, 30, 100)
+    svm.train(training_data, 30, 300)
 
     pos_correct = 0
     neg_correct = 0
@@ -129,3 +134,21 @@ if __name__ == "__main__":
     print(float(neg_correct + pos_correct) / 6000)
     print(float(neg_correct) / 3000)
     print(float(pos_correct) / 3000)
+
+    svm.save("/home/ubuntu/info-project/svm_weights/svm_weights.ckpt")
+
+def test_loading(weights_path):
+    svm = LinkSVM(gpu_num=0, weights_path=weights_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train LinkSVM')
+    parser.add_argument('-t', '--training_path', type=str, help="The path to a directory containing model training data")
+    parser.add_argument('-w', '--weights_path', type=str, help="The path to a directory containing saved model weights")
+
+    args = parser.parse_args()
+
+    if args.weights_path:
+        test_loading(args.weights_path)
+    elif args.training_path:
+        test_training(args.training_path)
+

@@ -16,13 +16,15 @@ POS_EVAL_LABEL = 1
 
 class LinkNet:
 
-    def __init__(self, gpu_num, gpu_mem_frac=.95):
-        self._create_architecture(gpu_num)
+    eval_net = None
 
+    def __init__(self, gpu_num, weights_path=None, gpu_mem_frac=.95):
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_mem_frac)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
 
-    def _create_architecture(self, gpu_num):
+        self._create_architecture(gpu_num, weights_path)
+
+    def _create_architecture(self, gpu_num, weights_path=None):
         with tf.device("/gpu:{}".format(gpu_num)):
             self.inputs = tf.placeholder(tf.float32, shape=[None, INPUT_VECTOR_SIZE])
             self.labels = tf.placeholder(tf.float32, shape=[None, NUM_CLASSES])
@@ -34,6 +36,10 @@ class LinkNet:
             self.outputs = tf.nn.softmax(fc3)
 
             self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc3, labels=self.labels))
+
+            if weights_path:
+                saver = tf.train.Saver()
+                saver.restore(self.sess, weights_path)
 
     def evaluate(self, input_item):
         feed_dict = {
@@ -49,7 +55,7 @@ class LinkNet:
             return NEG_EVAL_LABEL 
 
         return outputs[0]
-    
+
     def train(self, training_data, batch_size, num_epochs, learning_rate=.001):
         pos_vecs = training_data[TRAINING_LABEL_POSITIVE] 
         neg_vecs = training_data[TRAINING_LABEL_NEGATIVE]
@@ -82,24 +88,55 @@ class LinkNet:
 
             print(loss)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train LinkNet')
-    parser.add_argument('-t', '--training_path', type=str, help="The path to a directory containing model training data")
+    def save(self, output_path):
+        saver = tf.train.Saver()
+        saver.save(self.sess, output_path)
 
-    args = parser.parse_args()
-
+def test_training(training_path):
     pos_max = 5000
     neg_max = 6000
 
     training_data = load_training_data(args.training_path, pos_max, neg_max)
+        
     validation_data = dict(training_data)
     training_data[TRAINING_LABEL_POSITIVE] = training_data[TRAINING_LABEL_POSITIVE][:1200]
-    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:1500]
+    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:2400]
     validation_data[TRAINING_LABEL_POSITIVE] = validation_data[TRAINING_LABEL_POSITIVE][1200:] 
-    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][1500:] 
+    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][2400:] 
 
     net = LinkNet(gpu_num=0)
-    net.train(training_data, 30, 100)
+    net.train(training_data, 30, 300)
+
+    pos_correct = 0
+    neg_correct = 0
+    for idx in range(2000):
+        pos_item = validation_data[TRAINING_LABEL_POSITIVE][idx]
+        neg_item = validation_data[TRAINING_LABEL_NEGATIVE][idx]
+
+        pos_predict = net.evaluate(pos_item)
+        neg_predict = net.evaluate(neg_item)
+
+        if pos_predict == POS_EVAL_LABEL:
+            pos_correct += 1
+
+        if neg_predict == NEG_EVAL_LABEL:
+            neg_correct += 1
+
+    print(float(neg_correct + pos_correct) / 4000)
+    print(float(neg_correct) / 2000)
+    print(float(pos_correct) / 2000)
+
+    net.save("/home/ubuntu/info-project/nn_weights/nn_weights.ckpt")
+
+def test_loading(weights_path, training_path):
+    net = LinkNet(gpu_num=0, weights_path=weights_path)
+
+    pos_max = 5000
+    neg_max = 6000
+    training_data = load_training_data(args.training_path, pos_max, neg_max)
+    validation_data = dict(training_data)
+    validation_data[TRAINING_LABEL_POSITIVE] = validation_data[TRAINING_LABEL_POSITIVE][1200:] 
+    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][1500:] 
 
     pos_correct = 0
     neg_correct = 0
@@ -119,3 +156,15 @@ if __name__ == "__main__":
     print(float(neg_correct + pos_correct) / 6000)
     print(float(neg_correct) / 3000)
     print(float(pos_correct) / 3000)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train LinkNet')
+    parser.add_argument('-t', '--training_path', type=str, help="The path to a directory containing model training data")
+    parser.add_argument('-w', '--weights_path', type=str, help="The path to a directory containing saved model weights")
+
+    args = parser.parse_args()
+
+    if args.weights_path:
+        test_loading(args.weights_path, args.training_path)
+    else: 
+        test_training(args.training_path)
