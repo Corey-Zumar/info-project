@@ -8,8 +8,11 @@ import tensorflow as tf
 from learning import INPUT_VECTOR_SIZE, NUM_CLASSES, TRAINING_LABEL_POSITIVE, TRAINING_LABEL_NEGATIVE 
 from learning import load_training_data
 
-NEG_LABEL = np.array([0,1], dtype=np.float32)
-POS_LABEL = np.array([1,0], dtype=np.float32)
+NEG_TRAINING_LABEL = np.array([0,1], dtype=np.float32)
+POS_TRAINING_LABEL = np.array([1,0], dtype=np.float32)
+
+NEG_EVAL_LABEL = 0
+POS_EVAL_LABEL = 1
 
 class LinkNet:
 
@@ -38,14 +41,21 @@ class LinkNet:
         }
 
         outputs = self.sess.run(self.outputs, feed_dict=feed_dict)
-        return outputs
+        assert len(outputs) == 1
+
+        if outputs[0][0] > outputs[0][1]:
+            return POS_EVAL_LABEL 
+        else:
+            return NEG_EVAL_LABEL 
+
+        return outputs[0]
     
     def train(self, training_data, batch_size, num_epochs, learning_rate=.001):
         pos_vecs = training_data[TRAINING_LABEL_POSITIVE] 
         neg_vecs = training_data[TRAINING_LABEL_NEGATIVE]
 
         feature_vecs = np.array(pos_vecs + neg_vecs, dtype=np.float32)
-        labels = np.array([POS_LABEL for _ in pos_vecs] + [NEG_LABEL for _ in neg_vecs], dtype=np.float32)
+        labels = np.array([POS_TRAINING_LABEL for _ in pos_vecs] + [NEG_TRAINING_LABEL for _ in neg_vecs], dtype=np.float32)
         
         batches_per_epoch = len(feature_vecs) / batch_size 
 
@@ -78,11 +88,34 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    pos_max = 1000
-    neg_max = 1500
+    pos_max = 5000
+    neg_max = 6000
 
     training_data = load_training_data(args.training_path, pos_max, neg_max)
+    validation_data = dict(training_data)
+    training_data[TRAINING_LABEL_POSITIVE] = training_data[TRAINING_LABEL_POSITIVE][:1200]
+    training_data[TRAINING_LABEL_NEGATIVE] = training_data[TRAINING_LABEL_NEGATIVE][:1500]
+    validation_data[TRAINING_LABEL_POSITIVE] = validation_data[TRAINING_LABEL_POSITIVE][1200:] 
+    validation_data[TRAINING_LABEL_NEGATIVE] = validation_data[TRAINING_LABEL_NEGATIVE][1500:] 
+
     net = LinkNet(gpu_num=0)
     net.train(training_data, 30, 100)
-    print(net.evaluate(training_data[TRAINING_LABEL_POSITIVE][0]))
-    print(net.evaluate(training_data[TRAINING_LABEL_NEGATIVE][0]))
+
+    pos_correct = 0
+    neg_correct = 0
+    for idx in range(3000):
+        pos_item = validation_data[TRAINING_LABEL_POSITIVE][idx]
+        neg_item = validation_data[TRAINING_LABEL_NEGATIVE][idx]
+
+        pos_predict = net.evaluate(pos_item)
+        neg_predict = net.evaluate(neg_item)
+
+        if pos_predict == POS_EVAL_LABEL:
+            pos_correct += 1
+
+        if neg_predict == NEG_EVAL_LABEL:
+            neg_correct += 1
+
+    print(float(neg_correct + pos_correct) / 6000)
+    print(float(neg_correct) / 3000)
+    print(float(pos_correct) / 3000)
