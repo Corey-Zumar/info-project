@@ -5,41 +5,38 @@ import math
 import numpy as np
 import tensorflow as tf
 
-from learning import INPUT_VECTOR_SIZE, NUM_CLASSES, TRAINING_LABEL_POSITIVE, TRAINING_LABEL_NEGATIVE 
+from learning import INPUT_VECTOR_SIZE, TRAINING_LABEL_POSITIVE, TRAINING_LABEL_NEGATIVE 
 from learning import load_training_data
 
-NEG_LABEL = np.array([0,1], dtype=np.float32)
-POS_LABEL = np.array([1,0], dtype=np.float32)
+NEG_LABEL = 0
+POS_LABEL = 1
 
-class LinkNet:
+class LinkSVM:
 
     def __init__(self, gpu_num, gpu_mem_frac=.95):
-        self._create_architecture(gpu_num)
+        ModelBase.__init__(self)
+
+        self.weights = self._generate_weights(kernel_size)
+        self.labels = self._generate_labels(kernel_size)
+        self.bias = self._generate_bias()
 
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_mem_frac)
-        self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
+        self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True, device_count={'GPU': 0, 'CPU': 2}))
 
-    def _create_architecture(self, gpu_num):
-        with tf.device("/gpu:{}".format(gpu_num)):
-            self.inputs = tf.placeholder(tf.float32, shape=[None, INPUT_VECTOR_SIZE])
-            self.labels = tf.placeholder(tf.float32, shape=[None, NUM_CLASSES])
+        self._create_prediction_graph()
 
-            fc1 = tf.contrib.layers.fully_connected(self.inputs, 256)
-            fc2 = tf.contrib.layers.fully_connected(fc1, 64)
-            fc3 = tf.contrib.layers.fully_connected(fc2, NUM_CLASSES)
+    def _create_architecture(self):
+        with tf.device("/gpu:0"):
+            self.t_inputs = tf.placeholder(tf.float32, shape=[None, INPUT_VECTOR_SIZE])
+            self.t_labels = tf.placeholder(tf.float32, shape=[None, 1])
+            
+            self.t_weights = tf.Variable(tf.random_normal(shape=[INPUT_VECTOR_SIZE, NUM_CLASSES]))
+            self.t_bias = tf.Variable(tf.random_normal(shape=[None, 1])
 
-            self.outputs = tf.nn.softmax(fc3)
+            self.t_outputs = tf.matmul(self.t_inputs, self.t_weights) - self.t_bias
 
-            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc3, labels=self.labels))
+            self.loss = self.reduce_mean(tf.maximum(0, 1 - tf.multiply(self.t_inputs, self.t_labels)))
 
-    def evaluate(self, input_item):
-        feed_dict = {
-            self.inputs : [input_item]
-        }
-
-        outputs = self.sess.run(self.outputs, feed_dict=feed_dict)
-        return outputs
-    
     def train(self, training_data, batch_size, num_epochs, learning_rate=.001):
         pos_vecs = training_data[TRAINING_LABEL_POSITIVE] 
         neg_vecs = training_data[TRAINING_LABEL_NEGATIVE]
@@ -72,8 +69,34 @@ class LinkNet:
 
             print(loss)
 
+    def evaluate(self, inputs):
+        """
+        Parameters
+        --------------
+        inputs : [np.ndarray]
+            A list of float vectors of length 2048,
+            represented as numpy arrays
+        """
+        
+        feed_dict = {
+            self.t_inputs : inputs
+        }
+
+        outputs = self.sess.run(self.t_outputs, feed_dict=feed_dict)
+        outputs = outputs.flatten()
+
+        print(outputs)
+    
+    def get_weights(self):
+        weights = sess.run(self.t_weights, feed_dict={})
+        return weights
+
+    def get_bias(self):
+        bias = sess.run(self.t_bias, feed_dict={})
+        return bias
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train LinkNet')
+    parser = argparse.ArgumentParser(description='Train LinkSVM')
     parser.add_argument('-t', '--training_path', type=str, help="The path to a directory containing model training data")
 
     args = parser.parse_args()
